@@ -5,10 +5,12 @@ import altair as alt
 
 st.set_page_config(page_title="RetailPulse | Sales Analytics", page_icon="📊", layout="wide")
 
-BASE_PATH = Path(__file__).resolve().parent.parent
+APP_DIR = Path(__file__).resolve().parent
+# Works whether this script is in the repository root or inside a pages/ folder.
+BASE_PATH = APP_DIR.parent if APP_DIR.name.lower() == "pages" else APP_DIR
 
 def find_file(name):
-    for p in (BASE_PATH / name, BASE_PATH.parent / name, Path(__file__).resolve().parent / name):
+    for p in (BASE_PATH / name, BASE_PATH.parent / name, APP_DIR / name):
         if p.is_file():
             return p
     return None
@@ -92,5 +94,3 @@ with st.sidebar:
 filtered = sales.copy()
 if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
     start_date, end_date = date_range
-    filtered = filtered[filtered["date"].dt.date.between(start_date, end_date)]
-if selected_channels:
