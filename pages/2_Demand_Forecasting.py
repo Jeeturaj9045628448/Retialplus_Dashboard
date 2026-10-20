@@ -1,140 +1,338 @@
+
+from pathlib import Path
+import zipfile
+
+import pandas as pd
 import streamlit as st
 
-# Demand Forecasting Page
 
-st.title("Demand Forecasting")
+# ---------------- PAGE CONFIGURATION ----------------
+st.set_page_config(
+    page_title="RetailPulse | Demand Forecasting",
+    page_icon="📈",
+    layout="wide",
+)
+
+# Correct path when this file is inside the pages folder
+APP_DIR = Path(__file__).resolve().parent
+BASE_DIR = (
+    APP_DIR.parent
+    if APP_DIR.name.lower() == "pages"
+    else APP_DIR
+)
+
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebarNav"] {display: block;}
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 2rem;
+        max-width: 1600px;
+    }
+    div[data-testid="stMetric"] {
+        background: rgba(128,128,128,.07);
+        padding: 12px 14px;
+        border-radius: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ---------------- FIND DATASET ----------------
+def find_dataset():
+    folders = [BASE_DIR, APP_DIR, BASE_DIR.parent]
+    filenames = [
+        "cleaned_sales_transactions.csv",
+        "cleaned_sales_transactions.zip",
+    ]
+
+    for folder in folders:
+        for filename in filenames:
+            candidate = folder / filename
+            if candidate.is_file():
+                return candidate
+
+    return None
+
+
+@st.cache_data
+def load_sales_data(path_string):
+    path = Path(path_string)
+
+    if path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(path, "r") as archive:
+            csv_files = [
+                name for name in archive.namelist()
+                if name.lower().endswith(".csv")
+                and not name.startswith("__MACOSX/")
+            ]
+
+            if not csv_files:
+                raise ValueError(
+                    "ZIP file ke andar koi CSV file nahi mili."
+                )
+
+            with archive.open(csv_files[0]) as file:
+                return pd.read_csv(file)
+
+    return pd.read_csv(path)
+
+
+# ---------------- PAGE HEADER ----------------
+st.title("📈 Demand Forecasting")
 st.write("View future demand predictions for RetailPulse.")
 
 st.subheader("Forecast Overview")
 
 col1, col2 = st.columns(2)
-
 col1.metric("Forecast Period", "30 Days")
-col2.metric("Forecast Status", "Ready for Integration")
+col2.metric("Forecast Status", "Baseline Forecast")
 
-st.info("LSTM, Prophet, and Hybrid forecast data will be connected here.")
-
-
-# Day 16 - Step 1: Load Sales Data
-
-import pandas as pd
-from pathlib import Path
-
-#BASE_PATH = Path(
-#    r"C:\Users\milan\Downloads\archive (3)\retail_clean_dataset")
-
-BASE_PATH = Path(__file__).resolve().parent.parent.parent
-
-
-sales_path = BASE_PATH / "cleaned_sales_transactions.csv"
-
-@st.cache_data
-def load_sales_data(path):
-    return pd.read_csv(path)
-
-sales = load_sales_data(sales_path)
-
-sales["date"] = pd.to_datetime(sales["date"])
-
-st.subheader("Forecasting Data Overview")
-
-st.success("Sales transaction data loaded successfully.")
-
-st.metric(
-    "Total Sales Records",
-    f"{len(sales):,}"
+st.info(
+    "This page generates a simple baseline forecast using "
+    "historical sales demand. LSTM, Prophet and Hybrid models "
+    "are not connected in this version."
 )
 
+
+# ---------------- LOAD DATA ----------------
+sales_path = find_dataset()
+
+if sales_path is None:
+    st.error(
+        "Sales dataset nahi mili. "
+        "cleaned_sales_transactions.csv ya "
+        "cleaned_sales_transactions.zip ko GitHub repository "
+        "ke root folder mein app.py ke saath rakho."
+    )
+    st.stop()
+
+try:
+    sales = load_sales_data(str(sales_path))
+except Exception as exc:
+    st.error(f"Sales dataset load nahi hui: {exc}")
+    st.stop()
+
+required_columns = {"date", "quantity"}
+missing_columns = required_columns - set(sales.columns)
+
+if missing_columns:
+    st.error(
+        "Dataset mein required columns missing hain: "
+        + ", ".join(sorted(missing_columns))
+    )
+    st.stop()
+
+sales["date"] = pd.to_datetime(
+    sales["date"], errors="coerce"
+)
+sales["quantity"] = pd.to_numeric(
+    sales["quantity"], errors="coerce"
+)
+
+sales = sales.dropna(
+    subset=["date", "quantity"]
+).copy()
+
+if sales.empty:
+    st.error("Dataset mein valid date ya quantity data nahi hai.")
+    st.stop()
+
+# Remove time component to create daily totals
+sales["date"] = sales["date"].dt.normalize()
+
+
+# ---------------- SIDEBAR FILTERS ----------------
+with st.sidebar:
+    st.header("🔎 Forecast Filters")
+
+    min_date = sales["date"].min().date()
+    max_date = sales["date"].max().date()
+
+    date_range = st.date_input(
+        "Historical Date Range",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+    )
+
+    if "channel" in sales.columns:
+        channels = sorted(
+            sales["channel"].dropna().astype(str).unique()
+        )
+        selected_channels = st.multiselect(
+            "Sales Channel",
+            channels,
+            default=channels,
+        )
+    else:
+        selected_channels = None
+
+    if "store_id" in sales.columns:
+        stores = sorted(
+            sales["store_id"].dropna().astype(str).unique()
+        )
+        selected_stores = st.multiselect(
+            "Store",
+            stores,
+            default=stores,
+        )
+    else:
+        selected_stores = None
+
+
+# ---------------- APPLY FILTERS ----------------
+filtered = sales.copy()
+
+if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
+    start_date, end_date = date_range
+    filtered = filtered[
+        filtered["date"].dt.date.between(
+            start_date, end_date
+        )
+    ]
+
+if selected_channels is not None:
+    filtered = filtered[
+        filtered["channel"].astype(str).isin(
+            selected_channels
+        )
+    ]
+
+if selected_stores is not None:
+    filtered = filtered[
+        filtered["store_id"].astype(str).isin(
+            selected_stores
+        )
+    ]
+
+if filtered.empty:
+    st.warning(
+        "Selected filters ke liye data nahi mila. "
+        "Date range, channel ya store change karke dekho."
+    )
+    st.stop()
+
+
+# ---------------- HISTORICAL DATA ----------------
+st.subheader("📊 Forecasting Data Overview")
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Sales Records", f"{len(filtered):,}")
+col2.metric(
+    "Total Units Sold",
+    f"{filtered['quantity'].sum():,.0f}",
+)
+col3.metric(
+    "Historical Days",
+    f"{filtered['date'].dt.date.nunique():,}",
+)
+
+st.success(f"Dataset loaded: {sales_path.name}")
+
+st.subheader("Sales Dataset Preview")
 st.dataframe(
-    sales.head(30),
-    width="stretch"
+    filtered.head(30),
+    use_container_width=True,
 )
 
-## Day 16 - Step 2: Daily Demand Overview
 
-st.subheader("Daily Demand Overview")
+# ---------------- DAILY DEMAND ----------------
+st.subheader("📅 Daily Demand Overview")
 
 daily_demand = (
-    sales
-    .groupby("date")["quantity"]
+    filtered.groupby("date", as_index=False)["quantity"]
     .sum()
-    .reset_index()
+    .rename(columns={"quantity": "demand"})
     .sort_values("date")
 )
 
-daily_demand.columns = ["date", "demand"]
-
-st.metric(
-    "Total Days Available",
-    f"{len(daily_demand):,}"
+col1, col2 = st.columns(2)
+col1.metric(
+    "Total Historical Demand",
+    f"{daily_demand['demand'].sum():,.0f} units",
 )
-
-st.dataframe(
-    daily_demand.head(30),
-    width="stretch"
+col2.metric(
+    "Average Daily Demand",
+    f"{daily_demand['demand'].mean():,.1f} units",
 )
-
-# Day 16 - Step 3: Historical Demand Visualization
-
-st.subheader("Historical Demand Analysis")
 
 st.line_chart(
     daily_demand.set_index("date")["demand"],
     x_label="Date",
-    y_label="Units Sold"
+    y_label="Units Sold",
 )
 
-# Day 16 - Step 4: 30-Day Forecast Overview
+st.dataframe(
+    daily_demand.tail(30),
+    use_container_width=True,
+)
 
-st.subheader("30-Day Forecast Overview")
 
-forecast_days = 30
+# ---------------- 30-DAY BASELINE FORECAST ----------------
+st.subheader("🔮 30-Day Forecast Overview")
 
-average_demand = daily_demand["demand"].tail(30).mean()
+forecast_days = st.selectbox(
+    "Forecast Period",
+    [7, 14, 30, 60, 90],
+    index=2,
+)
+
+# Use the latest 30 available daily observations
+recent_demand = daily_demand["demand"].tail(30)
+average_demand = float(recent_demand.mean())
 
 last_date = daily_demand["date"].max()
 
 future_dates = pd.date_range(
     start=last_date + pd.Timedelta(days=1),
     periods=forecast_days,
-    freq="D"
+    freq="D",
 )
 
 forecast = pd.DataFrame({
     "date": future_dates,
-    "forecast_demand": round(average_demand)
+    "forecast_demand": [max(0, round(average_demand, 2))]
+    * forecast_days,
 })
 
-st.metric(
+col1, col2, col3 = st.columns(3)
+
+col1.metric(
     "Average Daily Forecast",
-    f"{average_demand:,.0f}"
+    f"{average_demand:,.1f} units",
 )
-
-st.dataframe(
-    forecast,
-    width="stretch"
+col2.metric(
+    "Forecast Period",
+    f"{forecast_days} days",
 )
-
-# Day 16 - Step 5: 30-Day Forecast Visualization
-
-st.subheader("Forecast Trend Analysis")
+col3.metric(
+    "Total Forecast Demand",
+    f"{forecast['forecast_demand'].sum():,.0f} units",
+)
 
 st.line_chart(
     forecast.set_index("date")["forecast_demand"],
     x_label="Date",
-    y_label="Forecasted Demand"
+    y_label="Forecasted Units",
 )
 
-# Day 16 - Step 6: Demand Scenario Analysis
+st.dataframe(forecast, use_container_width=True)
 
-st.subheader("Demand Scenario Analysis")
+
+# ---------------- DEMAND SCENARIO ANALYSIS ----------------
+st.subheader("🎯 Demand Scenario Analysis")
 
 demand_change = st.slider(
     "Expected Demand Adjustment (%)",
     min_value=-30,
     max_value=30,
     value=0,
-    step=5
+    step=5,
 )
 
 what_if_forecast = forecast.copy()
@@ -142,110 +340,60 @@ what_if_forecast = forecast.copy()
 what_if_forecast["adjusted_demand"] = (
     what_if_forecast["forecast_demand"]
     * (1 + demand_change / 100)
-).round()
+).round(2)
 
-st.metric(
+col1, col2 = st.columns(2)
+
+col1.metric(
     "Demand Adjustment",
-    f"{demand_change:+d}%"
+    f"{demand_change:+d}%",
+)
+
+col2.metric(
+    "Adjusted Total Demand",
+    f"{what_if_forecast['adjusted_demand'].sum():,.0f} units",
 )
 
 st.line_chart(
-    what_if_forecast.set_index("date")["adjusted_demand"],
+    what_if_forecast.set_index("date")[
+        ["forecast_demand", "adjusted_demand"]
+    ],
     x_label="Date",
-    y_label="Adjusted Demand"
+    y_label="Demand",
 )
 
 st.dataframe(
     what_if_forecast,
-    width="stretch"
+    use_container_width=True,
 )
 
-# Day 16 - Step 7: Forecast Comparison
 
-st.subheader("Forecast Scenario Comparison")
-
-comparison = what_if_forecast[
-    ["date", "forecast_demand", "adjusted_demand"]
-].copy()
-
-comparison = comparison.set_index("date")
-
-st.line_chart(
-    comparison,
-    x_label="Date",
-    y_label="Demand"
-)
-
-st.dataframe(
-    comparison,
-    width="stretch"
-)
-
-# Day 16 - Step 8: Forecast Summary Metrics
-
-st.subheader("Forecast Performance Summary")
+# ---------------- FORECAST SUMMARY ----------------
+st.subheader("📌 Forecast Summary")
 
 forecast_avg = forecast["forecast_demand"].mean()
 forecast_min = forecast["forecast_demand"].min()
 forecast_max = forecast["forecast_demand"].max()
+forecast_total = forecast["forecast_demand"].sum()
 
 col1, col2, col3 = st.columns(3)
 
-col1.metric(
-    "30-Day Average Demand",
-    f"{forecast_avg:,.0f}"
-)
-
-col2.metric(
-    "Minimum Forecast",
-    f"{forecast_min:,.0f}"
-)
-
-col3.metric(
-    "Maximum Forecast",
-    f"{forecast_max:,.0f}"
-)
-
-# Day 16 - Step 9: Demand Forecast
-
-st.subheader("Demand Forecast")
-
-recent_demand = daily_demand["demand"].tail(30).reset_index(drop=True)
-
-forecast = pd.DataFrame({
-    "date": future_dates,
-    "forecast_demand": recent_demand.values
-})
-
-st.line_chart(
-    forecast.set_index("date")["forecast_demand"],
-    x_label="Date",
-    y_label="Forecasted Demand"
-)
-
-st.dataframe(
-    forecast,
-    width="stretch"
-)
-
-# Day 16 - Step 10: Forecast Insights
-
-st.subheader("Forecast Insights")
-
-total_forecast_demand = forecast["forecast_demand"].sum()
-average_forecast_demand = forecast["forecast_demand"].mean()
+col1.metric("Average Daily Demand", f"{forecast_avg:,.1f}")
+col2.metric("Minimum Forecast", f"{forecast_min:,.1f}")
+col3.metric("Maximum Forecast", f"{forecast_max:,.1f}")
 
 st.write(
-    f"Expected demand over the next 30 days: "
-    f"**{total_forecast_demand:,.0f} units**."
+    f"Expected demand for the next {forecast_days} days: "
+    f"**{forecast_total:,.0f} units**."
 )
 
 st.write(
     f"Average expected daily demand: "
-    f"**{average_forecast_demand:,.0f} units**."
+    f"**{forecast_avg:,.1f} units**."
 )
 
-st.info(
-    "These baseline forecast values can be used to support "
-    "inventory planning and demand-based decision making."
+st.caption(
+    "Forecast method: baseline average of the latest "
+    "30 available daily observations. This is a simple "
+    "estimate, not an LSTM, Prophet or Hybrid model prediction."
 )
