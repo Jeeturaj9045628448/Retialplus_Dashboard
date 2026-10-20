@@ -1,96 +1,160 @@
-import plotly.express as px
-from pathlib import Path
-import pandas as pd
-import streamlit as st
-
-
-st.set_page_config(
-    page_title="RetailPulse | Sales Analytics",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-# Keep Streamlit's multipage navigation visible even if older CSS hid it.
-st.markdown(
-    """<style>
-    [data-testid="stSidebarNav"] { display: block !important; visibility: visible !important; }
-    [data-testid="stSidebar"] { display: block !important; }
-    </style>""",
-    unsafe_allow_html=True,
 )
 
-st.title("📊 Sales Analytics")
-
-#BASE_PATH = Path(
-  #  r"C:\Users\milan\Downloads\archive (3)\retail_clean_dataset"
-#)
-
-# Streamlit Cloud layout: repository root / app.py and repository root / pages / this file
-APP_DIR = Path(__file__).resolve().parent
-BASE_PATH = APP_DIR.parent if APP_DIR.name.lower() == "pages" else APP_DIR
-
-def find_data_file(*names):
-    candidates = []
-    for name in names:
-        candidates.extend([
-            BASE_PATH / name,
-            APP_DIR / name,
-            BASE_PATH.parent / name,
-        ])
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return None
-
-sales_path = find_data_file(
-    "cleaned_sales_transactions.zip",
-    "cleaned_sales_transactions.csv",
+st.dataframe(
+    city_age_pivot,
+    width="stretch"
 )
 
-@st.cache_data
-def load_sales(path_string):
-    path = Path(path_string)
-    if path.suffix.lower() == ".zip":
-        return pd.read_csv(path, compression="zip")
-    return pd.read_csv(path)
+# Step 60: Sales by Customer Gender & Age Group
 
-if sales_path is None:
-    st.error(
-        "Sales dataset not found. Upload cleaned_sales_transactions.zip "
-        "or cleaned_sales_transactions.csv to the repository root "
-        "(the same folder as app.py)."
-    )
-    st.stop()
+st.subheader("Sales by Customer Gender & Age Group")
 
-try:
-    sales = load_sales(str(sales_path))
-except Exception as exc:
-    st.error(f"Could not load the sales dataset: {exc}")
-    st.stop()
+gender_age_sales = sales.merge(
+    customers[["cust_id", "gender", "age"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
 
-required_columns = {
-    "date", "receipt_id", "store_id", "sku_id", "customer_id",
-    "quantity", "total_value", "channel", "discount_pct"
-}
-missing_columns = required_columns.difference(sales.columns)
-if missing_columns:
-    st.error("Sales dataset is missing columns: " + ", ".join(sorted(missing_columns)))
-    st.stop()
+gender_age_sales["age_group"] = pd.cut(
+    gender_age_sales["age"],
+    bins=[0, 18, 25, 35, 45, 55, 65, 100],
+    labels=[
+        "0-18",
+        "19-25",
+        "26-35",
+        "36-45",
+        "46-55",
+        "56-65",
+        "66+"
+    ]
+)
 
-for column in ["quantity", "total_value", "discount_pct"]:
-    sales[column] = pd.to_numeric(sales[column], errors="coerce").fillna(0)
+gender_age_summary = (
+    gender_age_sales
+    .groupby(
+        ["age_group", "gender"],
+        observed=False
+    )["total_value"]
+    .sum()
+    .reset_index()
+)
 
-for column in ["store_id", "sku_id", "customer_id", "channel"]:
-    sales[column] = sales[column].fillna("Unknown").astype(str)
+gender_age_pivot = gender_age_summary.pivot(
+    index="age_group",
+    columns="gender",
+    values="total_value"
+).fillna(0)
 
+st.bar_chart(
+    gender_age_pivot,
+    x_label="Age Group",
+    y_label="Total Sales"
+)
 
+st.dataframe(
+    gender_age_pivot,
+    width="stretch"
+)
 
-# ---------------- SALES FILTERS ----------------
-st.sidebar.header("🔎 Sales Filters")
+# Step 62: Sales by Customer Loyalty Segment & Age Group
 
-sales["date"] = pd.to_datetime(sales["date"], errors="coerce")
-sales = sales.dropna(subset=["date"])
+st.subheader("Sales by Customer Loyalty Segment & Age Group")
 
-# Date filter
-min_date = sales["date"].min().date()
-max_date = sales["date"].max().date()
+loyalty_age_sales = sales.merge(
+    customers[["cust_id", "loyalty_segment", "age"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+loyalty_age_sales["age_group"] = pd.cut(
+    loyalty_age_sales["age"],
+    bins=[0, 18, 25, 35, 45, 55, 65, 100],
+    labels=[
+        "0-18",
+        "19-25",
+        "26-35",
+        "36-45",
+        "46-55",
+        "56-65",
+        "66+"
+    ]
+)
+
+loyalty_age_summary = (
+    loyalty_age_sales
+    .groupby(
+        ["age_group", "loyalty_segment"],
+        observed=False
+    )["total_value"]
+    .sum()
+    .reset_index()
+)
+
+loyalty_age_pivot = loyalty_age_summary.pivot(
+    index="age_group",
+    columns="loyalty_segment",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    loyalty_age_pivot,
+    x_label="Age Group",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    loyalty_age_pivot,
+    width="stretch"
+)
+
+# Step 64: Sales by Customer Preferred Channel & Loyalty Segment
+
+st.subheader("Sales by Customer Preferred Channel & Loyalty Segment")
+
+channel_loyalty_sales = sales.merge(
+    customers[["cust_id", "preferred_channel", "loyalty_segment"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+channel_loyalty_summary = (
+    channel_loyalty_sales
+    .groupby(
+        ["preferred_channel", "loyalty_segment"]
+    )["total_value"]
+    .sum()
+    .reset_index()
+)
+
+channel_loyalty_pivot = channel_loyalty_summary.pivot(
+    index="loyalty_segment",
+    columns="preferred_channel",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    channel_loyalty_pivot,
+    x_label="Loyalty Segment",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    channel_loyalty_pivot,
+    width="stretch"
+)
+
+# Step 66: Sales by Customer Gender & Loyalty Segment
+
+st.subheader("Sales by Customer Gender & Loyalty Segment")
+
+gender_loyalty_sales = sales.merge(
+    customers[["cust_id", "gender", "loyalty_segment"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+gender_loyalty_summary = (
