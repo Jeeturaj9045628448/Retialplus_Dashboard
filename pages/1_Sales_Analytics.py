@@ -1,160 +1,159 @@
+
+st.caption(
+    f"Metrics based on latest available sales date: "
+    f"{latest_date.strftime('%d %b %Y')}"
 )
 
-channel_loyalty_summary = (
-    channel_loyalty_sales
-    .groupby(
-        ["preferred_channel", "loyalty_segment"]
-    )["total_value"]
-    .sum()
-    .reset_index()
+
+st.subheader("Inventory Alerts")
+
+if low_stock_items > 0:
+
+    st.warning(
+        f"⚠️ {low_stock_items:,} inventory items are at "
+        f"or below their reorder point."
+    )
+
+else:
+
+    st.success(
+        "✅ No low-stock inventory alerts."
+    )
+
+st.subheader("Sales Performance Alert")
+
+sales_difference_pct = (
+    ((total_sales_latest - average_daily_sales) / average_daily_sales) * 100
+    if pd.notna(average_daily_sales) and average_daily_sales != 0
+    else 0.0
 )
 
-channel_loyalty_pivot = channel_loyalty_summary.pivot(
-    index="loyalty_segment",
-    columns="preferred_channel",
-    values="total_value"
-).fillna(0)
 
-st.bar_chart(
-    channel_loyalty_pivot,
-    x_label="Loyalty Segment",
-    y_label="Total Sales"
+col1, col2 = st.columns(2)
+
+col1.metric(
+    "Average Daily Sales",
+    f"₹{average_daily_sales:,.0f}"
 )
 
-st.dataframe(
-    channel_loyalty_pivot,
-    width="stretch"
+col2.metric(
+    "Sales Difference",
+    f"{sales_difference_pct:+.2f}%"
 )
 
-# Step 66: Sales by Customer Gender & Loyalty Segment
 
-st.subheader("Sales by Customer Gender & Loyalty Segment")
+if sales_difference_pct <= -20:
 
-gender_loyalty_sales = sales.merge(
-    customers[["cust_id", "gender", "loyalty_segment"]],
-    left_on="customer_id",
-    right_on="cust_id",
-    how="left"
+    st.error(
+        f"🚨 Sales Alert: Latest sales are "
+        f"{abs(sales_difference_pct):.2f}% below "
+        f"the average daily sales."
+    )
+
+elif sales_difference_pct >= 20:
+
+    st.success(
+        f"🚀 Strong Sales Alert: Latest sales are "
+        f"{sales_difference_pct:.2f}% above "
+        f"the average daily sales."
+    )
+
+else:
+
+    st.info(
+        f"ℹ️ Sales Performance is Normal — "
+        f"latest sales are {sales_difference_pct:+.2f}% "
+        f"from the average daily sales."
+    )
+
+st.subheader("Reorder Priority Alerts")
+
+reorder_mask = (
+    inventory_data["stock_on_hand"]
+    <= inventory_data["reorder_point"]
 )
 
-gender_loyalty_summary = (
-    gender_loyalty_sales
-    .groupby(
-        ["loyalty_segment", "gender"]
-    )["total_value"]
-    .sum()
-    .reset_index()
+reorder_items = inventory_data.loc[reorder_mask].copy()
+
+reorder_items["recommended_order_qty"] = (
+    reorder_items["reorder_point"]
+    - reorder_items["stock_on_hand"]
+).clip(lower=0)
+
+if len(reorder_items) > 0:
+
+    q75 = reorder_items["recommended_order_qty"].quantile(0.75)
+    q25 = reorder_items["recommended_order_qty"].quantile(0.25)
+
+    high_priority_items = (
+        reorder_items["recommended_order_qty"] >= q75
+    ).sum()
+
+    medium_priority_items = (
+        (reorder_items["recommended_order_qty"] >= q25)
+        &
+        (reorder_items["recommended_order_qty"] < q75)
+    ).sum()
+
+    low_priority_items = (
+        reorder_items["recommended_order_qty"] < q25
+    ).sum()
+
+else:
+    high_priority_items = 0
+    medium_priority_items = 0
+    low_priority_items = 0
+
+total_reorder_items = (
+    high_priority_items
+    + medium_priority_items
+    + low_priority_items
 )
 
-gender_loyalty_pivot = gender_loyalty_summary.pivot(
-    index="loyalty_segment",
-    columns="gender",
-    values="total_value"
-).fillna(0)
+col1, col2, col3 = st.columns(3)
 
-st.bar_chart(
-    gender_loyalty_pivot,
-    x_label="Loyalty Segment",
-    y_label="Total Sales"
+col1.metric("High Priority", f"{high_priority_items:,}")
+col2.metric("Medium Priority", f"{medium_priority_items:,}")
+col3.metric("Low Priority", f"{low_priority_items:,}")
+
+st.write(
+    f"**Total items requiring replenishment:** "
+    f"{total_reorder_items:,}"
 )
 
-st.dataframe(
-    gender_loyalty_pivot,
-    width="stretch"
-)
+if high_priority_items > 0:
+    st.warning(
+        f"⚠️ {high_priority_items:,} high-priority "
+        "reorder items require immediate attention."
+    )
+else:
+    st.success("✅ No high-priority reorder alerts.")
 
-# Step 68: Sales by Customer City & Loyalty Segment
+st.subheader("Alert Status Summary")
 
-st.subheader("Sales by Customer City & Loyalty Segment")
 
-city_loyalty_sales = sales.merge(
-    customers[["cust_id", "city", "loyalty_segment"]],
-    left_on="customer_id",
-    right_on="cust_id",
-    how="left"
-)
+if sales_difference_pct <= -20:
 
-city_loyalty_summary = (
-    city_loyalty_sales
-    .groupby(
-        ["loyalty_segment", "city"]
-    )["total_value"]
-    .sum()
-    .reset_index()
-)
+    sales_alert_status = "Critical"
 
-city_loyalty_pivot = city_loyalty_summary.pivot(
-    index="loyalty_segment",
-    columns="city",
-    values="total_value"
-).fillna(0)
+elif sales_difference_pct >= 20:
 
-st.bar_chart(
-    city_loyalty_pivot,
-    x_label="Loyalty Segment",
-    y_label="Total Sales"
-)
+    sales_alert_status = "Strong"
 
-st.dataframe(
-    city_loyalty_pivot,
-    width="stretch"
-)
+else:
 
-# Step 70: Sales by Customer Preferred Channel & Gender
+    sales_alert_status = "Normal"
 
-st.subheader("Sales by Customer Preferred Channel & Gender")
 
-channel_gender_sales = sales.merge(
-    customers[["cust_id", "preferred_channel", "gender"]],
-    left_on="customer_id",
-    right_on="cust_id",
-    how="left"
-)
+if low_stock_items > 0:
 
-channel_gender_summary = (
-    channel_gender_sales
-    .groupby(["preferred_channel", "gender"])["total_value"]
-    .sum()
-    .reset_index()
-)
+    inventory_alert_status = "Critical"
 
-channel_gender_pivot = channel_gender_summary.pivot(
-    index="preferred_channel",
-    columns="gender",
-    values="total_value"
-).fillna(0)
+else:
 
-st.bar_chart(
-    channel_gender_pivot,
-    x_label="Preferred Channel",
-    y_label="Total Sales"
-)
+    inventory_alert_status = "Normal"
 
-st.dataframe(
-    channel_gender_pivot,
-    width="stretch"
-)
 
-# Step 72: Sales by Customer City & Preferred Channel
+if high_priority_items > 0:
 
-st.subheader("Sales by Customer City & Preferred Channel")
-
-city_channel_sales = sales.merge(
-    customers[["cust_id", "city", "preferred_channel"]],
-    left_on="customer_id",
-    right_on="cust_id",
-    how="left"
-)
-
-city_channel_summary = (
-    city_channel_sales
-    .groupby(["city", "preferred_channel"])["total_value"]
-    .sum()
-    .reset_index()
-)
-
-city_channel_pivot = city_channel_summary.pivot(
-    index="city",
-    columns="preferred_channel",
-    values="total_value"
-).fillna(0)
+    reorder_alert_status = "Critical"
