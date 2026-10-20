@@ -13,9 +13,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-[data-testid="stSidebarNav"] {
-    display: none;
-}
 
 # Correct repository path for files inside pages/
 APP_DIR = Path(__file__).resolve().parent
