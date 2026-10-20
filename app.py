@@ -1,118 +1,96 @@
-checks = {
-    "Sales data loaded": not sales.empty,
-    "Latest sales metric available": latest_sales >= 0,
-    "Daily sales trend available": not daily_sales.empty,
-    "Inventory monitoring available": low_stock is not None,
-}
-passed = sum(checks.values())
-st.progress(passed / len(checks))
-st.write(f"**{passed}/{len(checks)} checks passed**")
-for name, ok in checks.items():
-    st.write(("✅ " if ok else "⚠️ ") + name)
+from pathlib import Path
+from io import BytesIO
+import streamlit as st
+import pandas as pd
+import altair as alt
 
-st.header("📥 Report Export Center")
-st.write("Generate and download sales, inventory, alert summary, and business reports.")
+st.set_page_config(
+    page_title="RetailPulse AI Analytics Dashboard",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-sales_csv = sales.to_csv(index=False).encode("utf-8")
-st.download_button("📄 Download Sales Data (CSV)", sales_csv, "retailpulse_sales_report.csv", "text/csv")
+BASE_PATH = Path(__file__).resolve().parent
 
-alert_summary = pd.DataFrame([
-    ["Latest Sales", latest_sales],
-    ["Units Sold", units_sold],
-    ["Orders", orders_latest],
-    ["Low Stock Alerts", low_stock if low_stock is not None else "Unavailable"],
-    ["Average Daily Sales", average_daily_sales],
-    ["Sales Difference", f"{sales_difference_pct:+.2f}%"],
-    ["Sales Alert Status", sales_status],
-    ["Inventory Alert Status", inventory_status],
-    ["Reorder Alert Status", reorder_status],
-    ["High Priority Reorder Items", high_priority if low_stock is not None else "Unavailable"],
-    ["Medium Priority Reorder Items", medium_priority if low_stock is not None else "Unavailable"],
-    ["Low Priority Reorder Items", low_priority if low_stock is not None else "Unavailable"],
-    ["7-Day Average Sales", recent_average],
-    ["Latest vs 7-Day Average", f"{recent_diff_pct:+.2f}%"],
-    ["Critical Alert Days", critical_alerts],
-    ["Strong Alert Days", strong_alerts],
-    ["Normal Days", normal_alerts],
-], columns=["Metric", "Value"])
-alert_csv = alert_summary.to_csv(index=False).encode("utf-8")
-st.download_button("🚨 Download Alert Summary (CSV)", alert_csv, "retailpulse_alert_summary.csv", "text/csv")
+def find_data_file(filename):
+    for p in (BASE_PATH / filename, BASE_PATH.parent / filename):
+        if p.is_file():
+            return p
+    return None
 
-if inventory is not None:
-    inventory_export = inventory.copy()
-    inventory_export["recommended_order_qty"] = (inventory_export["reorder_point"] - inventory_export["stock_on_hand"]).clip(lower=0)
-    st.download_button(
-        "📦 Download Inventory & Reorder Data (CSV)",
-        inventory_export.to_csv(index=False).encode("utf-8"),
-        "retailpulse_inventory_reorder_report.csv",
-        "text/csv",
-    )
+st.markdown("""
+<style>
+.block-container {padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1550px;}
+[data-testid="stSidebarNav"] {display:none;}
+div[data-testid="stMetric"] {background:rgba(128,128,128,.07); padding:12px 14px; border-radius:10px;}
+.rp-muted {color:#aab0bb; font-size:.92rem;}
+</style>
+""", unsafe_allow_html=True)
+
+with st.sidebar:
+    st.title("🛍️ RetailPulse")
+    st.caption("Retail analytics and decision support")
+    st.divider()
+    st.page_link("app.py", label="Dashboard Overview", icon="🏠")
+    st.page_link("pages/1_Sales_Analytics.py", label="Sales Analytics", icon="📊")
+    st.page_link("pages/2_Demand_Forecasting.py", label="Demand Forecasting", icon="📈")
+    st.page_link("pages/3_Customer_Segmentation.py", label="Customer Segmentation", icon="👥")
+    st.page_link("pages/4_Inventory_Optimization.py", label="Inventory Optimization", icon="📦")
+
+st.title("🚀 RetailPulse AI Analytics Platform")
+st.write("Monitor retail performance, explore sales trends, and identify inventory risks.")
+
+sales_path = find_data_file("cleaned_sales_transactions.zip")
+if sales_path is None:
+    sales_path = find_data_file("cleaned_sales_transactions.csv")
+inventory_path = find_data_file("cleaned_inventory_snapshot.csv")
+
+sales = None
+inventory = None
+if sales_path:
+    try:
+        if sales_path.suffix.lower() == ".zip":
+            sales = pd.read_csv(sales_path, compression="zip")
+        else:
+            sales = pd.read_csv(sales_path)
+        required = {"date", "receipt_id", "quantity", "total_value"}
+        missing = required - set(sales.columns)
+        if missing:
+            st.error("Sales file missing required columns: " + ", ".join(sorted(missing)))
+            sales = None
+        else:
+            sales["date"] = pd.to_datetime(sales["date"], errors="coerce")
+            for col in ("quantity", "total_value"):
+                sales[col] = pd.to_numeric(sales[col], errors="coerce").fillna(0)
+            sales = sales.dropna(subset=["date"])
+    except Exception as exc:
+        st.error(f"Sales data could not be loaded: {exc}")
 else:
-    st.caption("Inventory CSV export becomes available when the inventory file is added.")
+    st.error("Sales data file not found. Put cleaned_sales_transactions.zip (or .csv) beside app.py in the repository root.")
 
-st.subheader("📊 Export Summary")
-export_rows = [
-    {"Report": "Sales Data Report", "Format": "CSV", "Status": "Available"},
-    {"Report": "Alert Summary Report", "Format": "CSV", "Status": "Available"},
-    {"Report": "Inventory & Reorder Report", "Format": "CSV", "Status": "Available" if inventory is not None else "Needs inventory CSV"},
-]
-st.dataframe(pd.DataFrame(export_rows), use_container_width=True, hide_index=True)
-
-st.header("📅 Data Freshness Monitor")
-today = pd.Timestamp.today().normalize()
-data_age_days = max(0, (today - latest_date.normalize()).days)
-freshness = "Fresh" if data_age_days <= 2 else ("Slightly Delayed" if data_age_days <= 7 else "Historical / Stale")
-z1, z2, z3 = st.columns(3)
-z1.metric("Latest Data Date", latest_date.strftime("%d %b %Y"))
-z2.metric("Data Age", f"{data_age_days} days")
-z3.metric("Freshness Status", freshness)
-if freshness == "Fresh":
-    st.success("✅ Data appears recent.")
-elif freshness == "Slightly Delayed":
-    st.warning("⚠️ Please review the data update schedule.")
+if inventory_path:
+    try:
+        inventory = pd.read_csv(inventory_path)
+        needed = {"stock_on_hand", "reorder_point"}
+        if not needed.issubset(inventory.columns):
+            st.warning("Inventory CSV must contain stock_on_hand and reorder_point columns.")
+            inventory = None
+    except Exception as exc:
+        st.warning(f"Inventory data could not be loaded: {exc}")
 else:
-    st.error("🚨 The dataset may need refreshing.")
-st.caption("This indicator compares the system date with the latest date in the dataset; it does not confirm that data is live.")
+    st.warning("Inventory CSV not found. Inventory-related KPIs will show as unavailable until cleaned_inventory_snapshot.csv is added.")
 
-st.header("📈 Interactive Sales Trend")
-trend_days = st.selectbox("Select sales trend period", [7, 14, 30, 90], index=2, format_func=lambda x: f"Last {x} days")
-trend = daily_sales.tail(trend_days).copy()
-if not trend.empty:
-    total_period_sales = float(trend["Sales"].sum())
-    avg_period_sales = float(trend["Sales"].mean())
-    highest_day = float(trend["Sales"].max())
-    lowest_day = float(trend["Sales"].min())
-    peak_date = trend.loc[trend["Sales"].idxmax(), "Date"]
-    x1, x2, x3, x4 = st.columns(4)
-    x1.metric("💰 Total Sales", f"₹{total_period_sales:,.2f}")
-    x2.metric("📊 Average Daily Sales", f"₹{avg_period_sales:,.2f}")
-    x3.metric("🚀 Highest Daily Sales", f"₹{highest_day:,.2f}")
-    x4.metric("📉 Lowest Daily Sales", f"₹{lowest_day:,.2f}")
-    st.caption(f"Peak sales date: {peak_date:%d %b %Y} | Showing {len(trend)} available daily records.")
-    chart_choice = st.radio("Choose chart type", ["📈 Line Chart", "📊 Bar Chart", "🌊 Area Chart"], horizontal=True)
-    base = alt.Chart(trend).encode(
-        x=alt.X("Date:T", title="Date", axis=alt.Axis(format="%d %b", labelAngle=-45)),
-        y=alt.Y("Sales:Q", title="Sales (₹)", axis=alt.Axis(format=",.0f")),
-        tooltip=[alt.Tooltip("Date:T", title="Date", format="%d %b %Y"), alt.Tooltip("Sales:Q", title="Sales", format=",.2f")],
-    )
-    if chart_choice == "📊 Bar Chart":
-        chart = base.mark_bar()
-    elif chart_choice == "🌊 Area Chart":
-        chart = base.mark_area(opacity=0.45, line=True)
-    else:
-        chart = base.mark_line(point=True)
-    st.altair_chart(chart.properties(height=380, title=f"Daily Sales Trend — Last {trend_days} Days").interactive(), use_container_width=True)
-    with st.expander("📋 View Daily Sales Data"):
-        display_trend = trend.copy()
-        display_trend["Date"] = display_trend["Date"].dt.strftime("%d %b %Y")
-        st.dataframe(display_trend, use_container_width=True, hide_index=True)
-    st.download_button(
-        "⬇️ Download Sales Trend CSV",
-        trend.to_csv(index=False).encode("utf-8"),
-        f"retailpulse_sales_trend_{trend_days}_days.csv",
-        "text/csv",
-    )
-else:
-    st.info("No sales trend data available for the selected period.")
+if sales is None or sales.empty:
+    st.info("The dashboard sections are ready, but metrics need a valid sales dataset.")
+    st.stop()
 
-st.caption(f"Data source: {sales_path.name} | Latest sales date in data: {latest_date:%d %b %Y}")
+latest_date = sales["date"].max()
+latest_rows = sales.loc[sales["date"] == latest_date]
+latest_sales = float(latest_rows["total_value"].sum())
+units_sold = int(latest_rows["quantity"].sum())
+orders_latest = int(latest_rows["receipt_id"].nunique())
+total_sales = float(sales["total_value"].sum())
+total_orders = int(sales["receipt_id"].nunique())
+
+daily_sales = (
