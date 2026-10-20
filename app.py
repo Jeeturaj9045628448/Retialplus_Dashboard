@@ -1,96 +1,103 @@
 from pathlib import Path
 import streamlit as st
-import pandas as pd
-import altair as alt
 
-st.set_page_config(page_title="RetailPulse AI Analytics Dashboard", page_icon="📊", layout="wide")
+st.set_page_config(
+    page_title="RetailPulse AI Analytics Platform",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-BASE_PATH = Path(__file__).resolve().parent
+# Keep the main page visually consistent with the screenshots.
+st.markdown(
+    """
+    <style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2.5rem;
+        max-width: 1500px;
+    }
+    [data-testid="stSidebarNav"] {
+        display: none;
+    }
+    .rp-subtitle {
+        color: #d1d5db;
+        font-size: 1.05rem;
+        line-height: 1.7;
+        margin-bottom: 1.5rem;
+    }
+    .rp-section {
+        border-top: 1px solid rgba(128,128,128,.35);
+        padding-top: 1.5rem;
+        margin-top: 1.5rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-def find_data_file(filename):
-    for candidate in (BASE_PATH / filename, BASE_PATH.parent / filename):
-        if candidate.is_file():
-            return candidate
-    return None
-
-# Hide Streamlit's automatic multipage menu so only the custom sidebar appears.
-st.markdown("""
-<style>
-.block-container {padding-top: 1.6rem; padding-bottom: 2rem;}
-[data-testid="stSidebarNav"] {display: none;}
-div[data-testid="stMetric"] {background: rgba(128,128,128,0.08); padding: 14px; border-radius: 10px;}
-</style>
-""", unsafe_allow_html=True)
-
+# Custom sidebar: one navigation menu only.
 with st.sidebar:
-    st.title("🛍️ RetailPulse")
+    st.markdown("## 🛍️ RetailPulse")
     st.caption("Retail analytics and decision support")
     st.divider()
-    st.page_link("app.py", label="Dashboard Home", icon="🏠")
+    st.page_link("app.py", label="Dashboard Overview", icon="🏠")
     st.page_link("pages/1_Sales_Analytics.py", label="Sales Analytics", icon="📊")
     st.page_link("pages/2_Demand_Forecasting.py", label="Demand Forecasting", icon="📈")
-    st.page_link("pages/3_Customer_Segmentation.py", label="Customer Segmentation", icon="👥")
+    st.page_link("pages/3_Customer_Segmentation.py", label="Customer Segmentation + Churn Risk", icon="👥")
     st.page_link("pages/4_Inventory_Optimization.py", label="Inventory Optimization", icon="📦")
 
-st.title("🚀 RetailPulse AI Analytics Dashboard")
-st.write("Monitor retail performance, explore sales trends, and identify inventory risks.")
-
-sales_path = find_data_file("cleaned_sales_transactions.zip")
-inventory_path = find_data_file("cleaned_inventory_snapshot.csv")
-sales = None
-inventory = None
-
-if sales_path:
-    try:
-        sales = pd.read_csv(sales_path, compression="zip")
-        required = {"date", "receipt_id", "quantity", "total_value"}
-        missing = required - set(sales.columns)
-        if missing:
-            st.error("Sales data is missing required columns: " + ", ".join(sorted(missing)))
-            sales = None
-        else:
-            sales["date"] = pd.to_datetime(sales["date"], errors="coerce")
-            sales["quantity"] = pd.to_numeric(sales["quantity"], errors="coerce").fillna(0)
-            sales["total_value"] = pd.to_numeric(sales["total_value"], errors="coerce").fillna(0)
-            sales = sales.dropna(subset=["date"])
-    except Exception as exc:
-        st.error(f"Could not read the sales ZIP file: {exc}")
-else:
-    st.error("Could not find cleaned_sales_transactions.zip. Put it in the same root folder as app.py.")
-
-if inventory_path:
-    try:
-        inventory = pd.read_csv(inventory_path)
-        if not {"stock_on_hand", "reorder_point"}.issubset(inventory.columns):
-            st.warning("Inventory file is missing stock_on_hand and/or reorder_point columns.")
-            inventory = None
-    except Exception as exc:
-        st.warning(f"Inventory data could not be loaded: {exc}")
-else:
-    st.info("Inventory data file is optional for the home page. Add cleaned_inventory_snapshot.csv to enable inventory KPIs.")
-
-if sales is None or sales.empty:
-    st.warning("The dashboard layout loaded, but sales metrics need a valid sales data file.")
-    st.stop()
-
-latest_date = sales["date"].max()
-latest_sales = sales.loc[sales["date"] == latest_date]
-total_sales = float(sales["total_value"].sum())
-latest_day_sales = float(latest_sales["total_value"].sum())
-orders = int(sales["receipt_id"].nunique())
-units = int(sales["quantity"].sum())
-
-daily_sales = (
-    sales.assign(Date=sales["date"].dt.date)
-    .groupby("Date", as_index=False)["total_value"].sum()
-    .rename(columns={"total_value": "Sales"})
+# Main overview, matching the first reference screenshot.
+st.title("🚀 RetailPulse AI Analytics Platform")
+st.header("📌 Overview")
+st.markdown(
+    """
+    <div class="rp-subtitle">
+    RetailPulse is an AI-powered retail analytics platform designed to help
+    businesses understand customers, forecast demand, manage inventory, and
+    make data-driven decisions.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
-average_daily_sales = float(daily_sales["Sales"].mean()) if not daily_sales.empty else 0.0
-low_stock = None
-if inventory is not None:
-    stock = pd.to_numeric(inventory["stock_on_hand"], errors="coerce").fillna(0)
-    reorder = pd.to_numeric(inventory["reorder_point"], errors="coerce").fillna(0)
-    low_stock = int((stock <= reorder).sum())
 
-st.subheader("📌 Business Overview")
-k1, k2, k3, k4 = st.columns(4)
+left, right = st.columns(2, gap="large")
+
+with left:
+    st.markdown("### 📈 Demand Forecasting")
+    st.write("Prophet + LSTM based 30-day demand forecasting.")
+    st.markdown("### 👥 Customer Analytics")
+    st.write("RFM analysis and customer segmentation using machine learning.")
+    st.markdown("### ⚠️ Churn Prediction")
+    st.write("Identify customers who are at risk of churn.")
+
+with right:
+    st.markdown("### 📦 Inventory Optimization")
+    st.write("Forecast-based reorder recommendations and stock monitoring.")
+    st.markdown("### 📊 Business Intelligence")
+    st.write("Interactive analytics, KPIs, alerts and downloadable reports.")
+
+st.markdown('<div class="rp-section"></div>', unsafe_allow_html=True)
+st.header("🏗️ System Architecture")
+st.markdown(
+    "**Data → Processing → ML Models → Forecasting → Dashboard → Deployment → Insights**"
+)
+
+a, b, c, d, e = st.columns(5, gap="medium")
+a.info("📥  **Data**")
+b.info("⚙️  **Processing**")
+c.info("🤖  **ML Models**")
+d.info("📈  **Forecasting**")
+e.info("💡  **Insights**")
+
+st.markdown('<div class="rp-section"></div>', unsafe_allow_html=True)
+st.success("✅ RetailPulse dashboard is ready.")
+st.info(
+    "👉 Use the sidebar to explore Sales Analytics, Demand Forecasting, "
+    "Customer Segmentation + Churn Risk, and Inventory Optimization."
+)
+
+st.caption(
+    "Note: This page is the dashboard overview. Detailed charts and filters "
+    "are available on the individual pages."
+)
