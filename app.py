@@ -19,7 +19,7 @@ def find_data_file(filename: str):
 st.markdown("""
 <style>
 .block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
-[data-testid="stSidebarNav"] {display: block;}
+[data-testid="stSidebarNav"] {display: none;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -80,8 +80,12 @@ if sales is not None and not sales.empty:
     latest_day_sales = float(latest_sales["total_value"].sum())
     orders = int(sales["receipt_id"].nunique())
     units = int(sales["quantity"].sum())
-    daily_sales = sales.groupby(sales["date"].dt.date, as_index=False)["total_value"].sum()
-    daily_sales.columns = ["Date", "Sales"]
+    daily_sales = (
+        sales.assign(Date=sales["date"].dt.date)
+        .groupby("Date", as_index=False)["total_value"]
+        .sum()
+        .rename(columns={"total_value": "Sales"})
+    )
     avg_daily = float(daily_sales["Sales"].mean()) if not daily_sales.empty else 0.0
     low_stock = None
     if inventory is not None and {"stock_on_hand", "reorder_point"}.issubset(inventory.columns):
@@ -90,7 +94,3 @@ if sales is not None and not sales.empty:
     a, b, c, d = st.columns(4)
     a.metric("Total Sales", f"₹{total_sales:,.0f}")
     b.metric("Orders", f"{orders:,}")
-    c.metric("Units Sold", f"{units:,}")
-    d.metric("Low-stock Items", f"{low_stock:,}" if low_stock is not None else "Unavailable")
-
-    st.caption(f"Sales data through {latest_date.strftime('%d %b %Y')}. Total sales and units reflect all available records.")
