@@ -1,3 +1,131 @@
+)
+
+channel_loyalty_summary = (
+    channel_loyalty_sales
+    .groupby(
+        ["preferred_channel", "loyalty_segment"]
+    )["total_value"]
+    .sum()
+    .reset_index()
+)
+
+channel_loyalty_pivot = channel_loyalty_summary.pivot(
+    index="loyalty_segment",
+    columns="preferred_channel",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    channel_loyalty_pivot,
+    x_label="Loyalty Segment",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    channel_loyalty_pivot,
+    width="stretch"
+)
+
+# Step 66: Sales by Customer Gender & Loyalty Segment
+
+st.subheader("Sales by Customer Gender & Loyalty Segment")
+
+gender_loyalty_sales = sales.merge(
+    customers[["cust_id", "gender", "loyalty_segment"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+gender_loyalty_summary = (
+    gender_loyalty_sales
+    .groupby(
+        ["loyalty_segment", "gender"]
+    )["total_value"]
+    .sum()
+    .reset_index()
+)
+
+gender_loyalty_pivot = gender_loyalty_summary.pivot(
+    index="loyalty_segment",
+    columns="gender",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    gender_loyalty_pivot,
+    x_label="Loyalty Segment",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    gender_loyalty_pivot,
+    width="stretch"
+)
+
+# Step 68: Sales by Customer City & Loyalty Segment
+
+st.subheader("Sales by Customer City & Loyalty Segment")
+
+city_loyalty_sales = sales.merge(
+    customers[["cust_id", "city", "loyalty_segment"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+city_loyalty_summary = (
+    city_loyalty_sales
+    .groupby(
+        ["loyalty_segment", "city"]
+    )["total_value"]
+    .sum()
+    .reset_index()
+)
+
+city_loyalty_pivot = city_loyalty_summary.pivot(
+    index="loyalty_segment",
+    columns="city",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    city_loyalty_pivot,
+    x_label="Loyalty Segment",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    city_loyalty_pivot,
+    width="stretch"
+)
+
+# Step 70: Sales by Customer Preferred Channel & Gender
+
+st.subheader("Sales by Customer Preferred Channel & Gender")
+
+channel_gender_sales = sales.merge(
+    customers[["cust_id", "preferred_channel", "gender"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+channel_gender_summary = (
+    channel_gender_sales
+    .groupby(["preferred_channel", "gender"])["total_value"]
+    .sum()
+    .reset_index()
+)
+
+channel_gender_pivot = channel_gender_summary.pivot(
+    index="preferred_channel",
+    columns="gender",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    channel_gender_pivot,
     x_label="Preferred Channel",
     y_label="Total Sales"
 )
@@ -30,86 +158,3 @@ city_channel_pivot = city_channel_summary.pivot(
     columns="preferred_channel",
     values="total_value"
 ).fillna(0)
-
-st.bar_chart(
-    city_channel_pivot,
-    x_label="City",
-    y_label="Total Sales"
-)
-
-st.dataframe(
-    city_channel_pivot,
-    width="stretch"
-)
-
-# Step 74: Sales by Customer City & Gender
-
-st.subheader("Sales by Customer City & Gender")
-
-city_gender_sales = sales.merge(
-    customers[["cust_id", "city", "gender"]],
-    left_on="customer_id",
-    right_on="cust_id",
-    how="left"
-)
-
-city_gender_summary = (
-    city_gender_sales
-    .groupby(["city", "gender"])["total_value"]
-    .sum()
-    .reset_index()
-)
-
-city_gender_pivot = city_gender_summary.pivot(
-    index="city",
-    columns="gender",
-    values="total_value"
-).fillna(0)
-
-st.bar_chart(
-    city_gender_pivot,
-    x_label="City",
-    y_label="Total Sales"
-)
-
-st.dataframe(
-    city_gender_pivot,
-    width="stretch"
-)
-
-
-
-# Step 78: Sales by Customer Loyalty Segment & Gender
-
-st.subheader("Sales by Customer Loyalty Segment & Gender")
-
-loyalty_gender_sales = sales.merge(
-    customers[["cust_id", "loyalty_segment", "gender"]],
-    left_on="customer_id",
-    right_on="cust_id",
-    how="left"
-)
-
-loyalty_gender_summary = (
-    loyalty_gender_sales
-    .groupby(["loyalty_segment", "gender"])["total_value"]
-    .sum()
-    .reset_index()
-)
-
-loyalty_gender_pivot = loyalty_gender_summary.pivot(
-    index="loyalty_segment",
-    columns="gender",
-    values="total_value"
-).fillna(0)
-
-st.bar_chart(
-    loyalty_gender_pivot,
-    x_label="Loyalty Segment",
-    y_label="Total Sales"
-)
-
-st.dataframe(
-    loyalty_gender_pivot,
-    width="stretch"
-)
