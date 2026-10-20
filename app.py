@@ -1,25 +1,24 @@
 from pathlib import Path
-import zipfile
 import streamlit as st
 import pandas as pd
 import altair as alt
 
-st.set_page_config(page_title="RetailPulse Dashboard", page_icon="📊", layout="wide")
+st.set_page_config(page_title="RetailPulse AI Analytics Dashboard", page_icon="📊", layout="wide")
 
-# Find files relative to this app first. Streamlit Cloud runs app.py from the repo root.
 BASE_PATH = Path(__file__).resolve().parent
 
-def find_data_file(filename: str):
-    candidates = [BASE_PATH / filename, BASE_PATH.parent / filename]
-    for candidate in candidates:
+def find_data_file(filename):
+    for candidate in (BASE_PATH / filename, BASE_PATH.parent / filename):
         if candidate.is_file():
             return candidate
     return None
 
+# Hide Streamlit's automatic multipage menu so only the custom sidebar appears.
 st.markdown("""
 <style>
-.block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
+.block-container {padding-top: 1.6rem; padding-bottom: 2rem;}
 [data-testid="stSidebarNav"] {display: none;}
+div[data-testid="stMetric"] {background: rgba(128,128,128,0.08); padding: 14px; border-radius: 10px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,10 +37,8 @@ st.write("Monitor retail performance, explore sales trends, and identify invento
 
 sales_path = find_data_file("cleaned_sales_transactions.zip")
 inventory_path = find_data_file("cleaned_inventory_snapshot.csv")
-
 sales = None
 inventory = None
-load_warnings = []
 
 if sales_path:
     try:
@@ -49,7 +46,7 @@ if sales_path:
         required = {"date", "receipt_id", "quantity", "total_value"}
         missing = required - set(sales.columns)
         if missing:
-            load_warnings.append("Sales file is missing columns: " + ", ".join(sorted(missing)))
+            st.error("Sales data is missing required columns: " + ", ".join(sorted(missing)))
             sales = None
         else:
             sales["date"] = pd.to_datetime(sales["date"], errors="coerce")
@@ -57,40 +54,43 @@ if sales_path:
             sales["total_value"] = pd.to_numeric(sales["total_value"], errors="coerce").fillna(0)
             sales = sales.dropna(subset=["date"])
     except Exception as exc:
-        load_warnings.append(f"Sales data could not be loaded: {exc}")
+        st.error(f"Could not read the sales ZIP file: {exc}")
 else:
-    load_warnings.append("`cleaned_sales_transactions.zip` was not found in the repository root.")
+    st.error("Could not find cleaned_sales_transactions.zip. Put it in the same root folder as app.py.")
 
 if inventory_path:
     try:
         inventory = pd.read_csv(inventory_path)
-        needed = {"stock_on_hand", "reorder_point"}
-        if not needed.issubset(inventory.columns):
-            load_warnings.append("Inventory CSV must contain stock_on_hand and reorder_point columns.")
+        if not {"stock_on_hand", "reorder_point"}.issubset(inventory.columns):
+            st.warning("Inventory file is missing stock_on_hand and/or reorder_point columns.")
             inventory = None
     except Exception as exc:
-        load_warnings.append(f"Inventory data could not be loaded: {exc}")
+        st.warning(f"Inventory data could not be loaded: {exc}")
 else:
-    load_warnings.append("Optional inventory file `cleaned_inventory_snapshot.csv` was not found; inventory KPIs will show as unavailable.")
+    st.info("Inventory data file is optional for the home page. Add cleaned_inventory_snapshot.csv to enable inventory KPIs.")
 
-if sales is not None and not sales.empty:
-    latest_date = sales["date"].max()
-    latest_sales = sales.loc[sales["date"] == latest_date]
-    total_sales = float(sales["total_value"].sum())
-    latest_day_sales = float(latest_sales["total_value"].sum())
-    orders = int(sales["receipt_id"].nunique())
-    units = int(sales["quantity"].sum())
-    daily_sales = (
-        sales.assign(Date=sales["date"].dt.date)
-        .groupby("Date", as_index=False)["total_value"]
-        .sum()
-        .rename(columns={"total_value": "Sales"})
-    )
-    avg_daily = float(daily_sales["Sales"].mean()) if not daily_sales.empty else 0.0
-    low_stock = None
-    if inventory is not None and {"stock_on_hand", "reorder_point"}.issubset(inventory.columns):
-        low_stock = int((pd.to_numeric(inventory["stock_on_hand"], errors="coerce").fillna(0) <= pd.to_numeric(inventory["reorder_point"], errors="coerce").fillna(0)).sum())
+if sales is None or sales.empty:
+    st.warning("The dashboard layout loaded, but sales metrics need a valid sales data file.")
+    st.stop()
 
-    a, b, c, d = st.columns(4)
-    a.metric("Total Sales", f"₹{total_sales:,.0f}")
-    b.metric("Orders", f"{orders:,}")
+latest_date = sales["date"].max()
+latest_sales = sales.loc[sales["date"] == latest_date]
+total_sales = float(sales["total_value"].sum())
+latest_day_sales = float(latest_sales["total_value"].sum())
+orders = int(sales["receipt_id"].nunique())
+units = int(sales["quantity"].sum())
+
+daily_sales = (
+    sales.assign(Date=sales["date"].dt.date)
+    .groupby("Date", as_index=False)["total_value"].sum()
+    .rename(columns={"total_value": "Sales"})
+)
+average_daily_sales = float(daily_sales["Sales"].mean()) if not daily_sales.empty else 0.0
+low_stock = None
+if inventory is not None:
+    stock = pd.to_numeric(inventory["stock_on_hand"], errors="coerce").fillna(0)
+    reorder = pd.to_numeric(inventory["reorder_point"], errors="coerce").fillna(0)
+    low_stock = int((stock <= reorder).sum())
+
+st.subheader("📌 Business Overview")
+k1, k2, k3, k4 = st.columns(4)
