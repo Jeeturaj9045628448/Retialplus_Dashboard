@@ -1,160 +1,96 @@
-total_checks = len(validation_checks)
+import streamlit as st
+import pandas as pd
+from pathlib import Path
+import altair as alt
 
-
-
-if passed_checks == total_checks:
-    st.success(
-        "✅ completed  "
-        "Real-time metrics, sales alerts, inventory alerts, "
-        "and reorder priority monitoring are working correctly."
-    )
-else:
-    st.warning(
-        "⚠️ Some  validation checks require review."
-    )
-
-st.subheader("📥 Report Export Center")
-
-st.markdown("Generate and download business reports in CSV and PDF formats")
-
-sales_export = sales_data.copy()
-
-sales_csv = sales_export.to_csv(index=False).encode("utf-8")
-
-st.download_button(
-label="📄 Download • 📊 Export Sales Data (CSV)",
-data=sales_csv,
-file_name="retailpulse_sales_report.csv",
-mime="text/csv")
-
-inventory_export = inventory_data.copy()
-
-inventory_export["recommended_order_qty"] = (
-    inventory_export["reorder_point"]
-    - inventory_export["stock_on_hand"]
-).clip(lower=0)
-
-inventory_csv = inventory_export.to_csv(index=False).encode("utf-8")
-
-st.download_button(
-    label="📦 Download • 📊 Export Inventory & Reorder Data (CSV)",
-    data=inventory_csv,
-    file_name="retailpulse_inventory_reorder_report.csv",
-    mime="text/csv"
+st.set_page_config(
+    page_title="RetailPulse Dashboard",
+    page_icon="📊",
+    layout="wide"
 )
 
-alert_summary = pd.DataFrame({
-    "Metric": [
-        "Latest Sales",
-        "Units Sold",
-        "Orders",
-        "Low Stock Alerts",
-        "Average Daily Sales",
-        "Sales Difference",
-        "Sales Alert Status",
-        "Inventory Alert Status",
-        "Reorder Alert Status",
-        "High Priority Reorder Items",
-        "Medium Priority Reorder Items",
-        "Low Priority Reorder Items",
-        "Total Items Requiring Replenishment",
-        "7-Day Average Sales",
-        "Latest vs 7-Day Average",
-        "Critical Alert Days",
-        "Strong Alert Days",
-        "Normal Days"
-    ],
-    "Value": [
-        total_sales_latest,
-        total_units_latest,
-        total_orders_latest,
-        low_stock_items,
-        average_daily_sales,
-        f"{sales_difference_pct:+.2f}%",
-        sales_alert_status,
-        inventory_alert_status,
-        reorder_alert_status,
-        high_priority_items,
-        medium_priority_items,
-        low_priority_items,
-        total_reorder_items,
-        recent_average_sales,
-        f"{latest_vs_recent_avg:+.2f}%",
-        critical_alerts,
-        strong_alerts,
-        normal_alerts
-    ]
-})
+st.markdown(
+    """
+    <style>
+    /* Hide Streamlit's default page navigation */
+    [data-testid="stSidebarNav"] {
+        display: none;
+    }
 
-alert_csv = alert_summary.to_csv(index=False).encode("utf-8")
+    /* Sidebar navigation styling */
+    [data-testid="stSidebar"] .nav-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 12px;
+    }
 
-st.download_button(
-    label="🚨 Download • 📊 Export Alert Summary (CSV)",
-    data=alert_csv,
-    file_name="retailpulse_alert_summary.csv",
-    mime="text/csv"
+    [data-testid="stSidebar"] .nav-item {
+        padding: 8px 4px;
+        margin-bottom: 4px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-# Step 5: PDF Report Export
-
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer,
-    Table,
-    TableStyle
+st.sidebar.markdown(
+    '<div class="nav-title">RetailPulse</div>',
+    unsafe_allow_html=True
 )
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.enums import TA_CENTER
-from io import BytesIO
 
+# app.py is the main entry point, so do not create a page_link to itself.
+# These links point to the four scripts stored in the pages/ directory.
+st.sidebar.page_link("pages/1_Sales_Analytics.py", label="Sales Analytics", icon="📊")
+st.sidebar.page_link("pages/2_Demand_Forecasting.py", label="Demand Forecasting", icon="📈")
+st.sidebar.page_link("pages/3_Customer_Segmentation.py", label="Customer Segmentation + Churn Risk", icon="👥")
+st.sidebar.page_link("pages/4_Inventory_Optimization.py", label="Inventory Optimization", icon="📦")
+st.sidebar.divider()
 
-def create_pdf_report():
+# app.py lives in the repository root, alongside the CSV/ZIP data files.
+BASE_PATH = Path(__file__).resolve().parent
+sales_path = BASE_PATH / "cleaned_sales_transactions.zip"
+inventory_path = BASE_PATH / "cleaned_inventory_snapshot.csv"
 
-    buffer = BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
+if not sales_path.is_file():
+    st.error(
+        "Sales data file not found. Expected `cleaned_sales_transactions.zip` "
+        f"in the repository root. Checked: {sales_path}"
     )
+    st.stop()
 
-    styles = getSampleStyleSheet()
-
-    title_style = styles["Title"]
-    title_style.alignment = TA_CENTER
-
-    heading_style = styles["Heading2"]
-
-    normal_style = styles["Normal"]
-
-    story = []
-
-    # Report Title
-    story.append(
-        Paragraph(
-            "RetailPulse AI Analytics Platform",
-            title_style
-        )
+if not inventory_path.is_file():
+    st.error(
+        "Inventory data file not found. Expected `cleaned_inventory_snapshot.csv` "
+        f"in the repository root. Checked: {inventory_path}"
     )
+    st.stop()
 
-    story.append(
-        Paragraph(
-            "Real-time Metrics & Alert Report",
-            heading_style
-        )
+try:
+    sales_data = pd.read_csv(
+        sales_path,
+        compression="zip",
+        usecols=["receipt_id", "date", "quantity", "total_value"]
     )
-
-    story.append(Spacer(1, 12))
-
-    # Key Metrics
-    story.append(
-        Paragraph("Key Metrics", heading_style)
+except Exception as exc:
+    st.error(
+        "Could not read `cleaned_sales_transactions.zip`. Make sure the ZIP "
+        "contains a CSV file with columns: receipt_id, date, quantity, total_value. "
+        f"Details: {exc}"
     )
+    st.stop()
 
-    metrics_data = [
+try:
+    inventory_data = pd.read_csv(
+        inventory_path,
+        usecols=["sku_id", "store_id", "stock_on_hand", "reorder_point"]
+    )
+except Exception as exc:
+    st.error(
+        "Could not read `cleaned_inventory_snapshot.csv`. Check that it contains "
+        "sku_id, store_id, stock_on_hand, reorder_point. "
+        f"Details: {exc}"
+    )
+    st.stop()
+
+if sales_data.empty:
+    st.error("Sales ZIP contains no sales records.")
