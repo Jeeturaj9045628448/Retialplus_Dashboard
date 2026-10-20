@@ -1,0 +1,1 @@
+Automated functional tests are not yet included. See docs/PROJECT_STATUS.md.
