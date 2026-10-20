@@ -1,96 +1,115 @@
-
-
-# Step 24: Sales Analytics with Real Metrics
-
-import streamlit as st
-import pandas as pd
-from pathlib import Path
-
-st.title("Sales Analytics")
-
-#BASE_PATH = Path(
-  #  r"C:\Users\milan\Downloads\archive (3)\retail_clean_dataset"
-#)
-
-BASE_PATH = Path(__file__).resolve().parent.parent
-
-
-
-sales_path = BASE_PATH / "cleaned_sales_transactions.zip"
-customer_path = BASE_PATH / "cleaned_customer_master.csv"
-
-@st.cache_data
-def load_sales(path):
-    # The ZIP in the repository contains cleaned_sales_transactions.csv.
-    return pd.read_csv(path, compression="zip")
-
-if not sales_path.is_file():
-    st.error(f"Sales dataset not found: {sales_path}")
-    st.info("Make sure cleaned_sales_transactions.zip is in the repository root (the same level as app.py).")
-    st.stop()
-
-try:
-    sales = load_sales(sales_path)
-except Exception as exc:
-    st.error("Could not read cleaned_sales_transactions.zip. Upload a valid ZIP containing the sales CSV.")
-    st.exception(exc)
-    st.stop()
-
-required_sales_columns = [
-    "date", "receipt_id", "store_id", "sku_id", "customer_id",
-    "quantity", "total_value", "channel", "discount_pct"
-]
-missing_sales_columns = [column for column in required_sales_columns if column not in sales.columns]
-if missing_sales_columns:
-    st.error(f"Sales dataset is missing required columns: {', '.join(missing_sales_columns)}")
-    st.stop()
-
-sales["date"] = pd.to_datetime(sales["date"], errors="coerce")
-sales["total_value"] = pd.to_numeric(sales["total_value"], errors="coerce").fillna(0)
-sales["quantity"] = pd.to_numeric(sales["quantity"], errors="coerce").fillna(0)
-
-if sales.empty:
-    st.error("The sales dataset is empty.")
-    st.stop()
-
-total_sales = sales["total_value"].sum()
-total_transactions = sales["receipt_id"].nunique()
-average_order_value = (
-    sales.groupby("receipt_id")["total_value"].sum().mean()
+    x_label="Preferred Channel",
+    y_label="Total Sales"
 )
 
-col1, col2, col3 = st.columns(3)
+st.dataframe(
+    channel_gender_pivot,
+    width="stretch"
+)
 
-col1.metric("Total Sales", f"₹{total_sales:,.2f}")
-col2.metric("Total Orders", f"{total_transactions:,}")
-col3.metric("Average Order Value", f"₹{average_order_value:,.2f}")
+# Step 72: Sales by Customer City & Preferred Channel
 
-st.subheader("Sales Dataset Preview")
-st.dataframe(sales.head(100), width="stretch")
+st.subheader("Sales by Customer City & Preferred Channel")
 
+city_channel_sales = sales.merge(
+    customers[["cust_id", "city", "preferred_channel"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
 
-# Step 26: Daily Sales Trend
-
-st.subheader("Daily Sales Trend")
-
-sales["date"] = pd.to_datetime(sales["date"])
-
-daily_sales = (
-    sales.groupby("date")["total_value"]
+city_channel_summary = (
+    city_channel_sales
+    .groupby(["city", "preferred_channel"])["total_value"]
     .sum()
     .reset_index()
-    .sort_values("date")
 )
 
-st.line_chart(
-    daily_sales.set_index("date")["total_value"],
-    x_label="Date",
-    y_label="Sales Value"
+city_channel_pivot = city_channel_summary.pivot(
+    index="city",
+    columns="preferred_channel",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    city_channel_pivot,
+    x_label="City",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    city_channel_pivot,
+    width="stretch"
+)
+
+# Step 74: Sales by Customer City & Gender
+
+st.subheader("Sales by Customer City & Gender")
+
+city_gender_sales = sales.merge(
+    customers[["cust_id", "city", "gender"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+city_gender_summary = (
+    city_gender_sales
+    .groupby(["city", "gender"])["total_value"]
+    .sum()
+    .reset_index()
+)
+
+city_gender_pivot = city_gender_summary.pivot(
+    index="city",
+    columns="gender",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    city_gender_pivot,
+    x_label="City",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    city_gender_pivot,
+    width="stretch"
 )
 
 
-# Step 28: Sales by Channel
 
-st.subheader("Sales by Channel")
+# Step 78: Sales by Customer Loyalty Segment & Gender
 
-channel_sales = (
+st.subheader("Sales by Customer Loyalty Segment & Gender")
+
+loyalty_gender_sales = sales.merge(
+    customers[["cust_id", "loyalty_segment", "gender"]],
+    left_on="customer_id",
+    right_on="cust_id",
+    how="left"
+)
+
+loyalty_gender_summary = (
+    loyalty_gender_sales
+    .groupby(["loyalty_segment", "gender"])["total_value"]
+    .sum()
+    .reset_index()
+)
+
+loyalty_gender_pivot = loyalty_gender_summary.pivot(
+    index="loyalty_segment",
+    columns="gender",
+    values="total_value"
+).fillna(0)
+
+st.bar_chart(
+    loyalty_gender_pivot,
+    x_label="Loyalty Segment",
+    y_label="Total Sales"
+)
+
+st.dataframe(
+    loyalty_gender_pivot,
+    width="stretch"
+)
