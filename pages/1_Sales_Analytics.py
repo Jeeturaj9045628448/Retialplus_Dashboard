@@ -7,12 +7,10 @@ import plotly.express as px
 import streamlit as st
 
 st.set_page_config(
-    page_title="Sales Analytics",
+    page_title="RetailPulse | Sales Analytics",
     page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
-
 
 # Correct repository path for files inside pages/
 APP_DIR = Path(__file__).resolve().parent
